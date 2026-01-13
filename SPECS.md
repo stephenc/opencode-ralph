@@ -31,7 +31,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator.
 - [x] Stream stdout/stderr in real-time (verbose mode)
 - [x] Capture full output for notes extraction
 - [ ] Handle opencode exit codes properly (currently warns but continues)
-- [ ] Add --model flag to specify AI model
+- [x] Add --model flag to specify AI model
 
 ## Notes System
 - [x] Extract `<ralph_notes>...</ralph_notes>` from opencode output
@@ -42,7 +42,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator.
 - [x] Check if in git repository
 - [x] Auto-commit after each iteration with message format
 - [x] Handle commit failures gracefully (log and continue)
-- [ ] Add --no-commit flag to disable auto-commit
+- [x] Add --no-commit flag to disable auto-commit
 
 ## Orchestration Loop
 - [x] Implement main loop with iteration counter

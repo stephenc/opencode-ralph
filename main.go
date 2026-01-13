@@ -104,6 +104,7 @@ Run Options:
   --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
   --verbose             Stream opencode output in real-time
   --dry-run             Show constructed prompt without executing
+  --no-commit           Disable auto-commit after each iteration
 
 Config Commands:
   config                Show current configuration
@@ -250,6 +251,7 @@ func manualCmd(args []string) {
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
+	noCommit := fs.Bool("no-commit", false, "Disable auto-commit after iteration")
 	fs.Parse(args)
 
 	// Apply overrides
@@ -269,7 +271,7 @@ func manualCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun); err != nil {
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun, *noCommit); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -288,6 +290,7 @@ func runCmd(args []string) {
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
+	noCommit := fs.Bool("no-commit", false, "Disable auto-commit after iterations")
 	fs.Parse(args)
 
 	// Apply overrides
@@ -307,13 +310,13 @@ func runCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun); err != nil {
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, *noCommit); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun bool) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun, noCommit bool) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -396,9 +399,11 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 			return nil
 		}
 
-		// Auto-commit
-		if err := autoCommit(iteration); err != nil {
-			fmt.Printf("Warning: auto-commit failed: %v\n", err)
+		// Auto-commit (unless disabled)
+		if !noCommit {
+			if err := autoCommit(iteration); err != nil {
+				fmt.Printf("Warning: auto-commit failed: %v\n", err)
+			}
 		}
 	}
 
