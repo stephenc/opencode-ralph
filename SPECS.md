@@ -37,7 +37,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator.
 - [x] Extract `<ralph_notes>...</ralph_notes>` from opencode output
 - [x] Append extracted notes to .ralph/notes.md with timestamp (full history kept on disk)
 - [x] Handle missing or malformed notes gracefully
-- [ ] Only include LAST iteration's notes in prompt (not full history) to reduce context usage
+- [x] Only include LAST iteration's notes in prompt (not full history) to reduce context usage
 
 ## Git Integration
 **Design Note**: Ralph does NOT manage git commits directly. Instead, opencode handles
