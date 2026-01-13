@@ -26,6 +26,9 @@ You determine completion by examining SPECS.md content. Update it appropriately 
 - **ACTUALLY COMPLETE THE TASK** - Don't mark done until truly finished
 - **UPDATE SPECS.md** - You must edit the file to check off completed work
 - **BE HONEST IN NOTES** - Report blockers, failures, and suggestions
+- **VERIFY YOUR CHANGES** - Build/compile/test as described in conventions before marking complete
+- **COMPLETE REFACTORS ATOMICALLY** - If removing a feature, update ALL usages in the same iteration
+- **COMMIT YOUR WORK** - After completing the task, create a git commit using conventional commits (fix:, feat:, docs:, chore:, refactor:)
 
 ## Output Tags
 

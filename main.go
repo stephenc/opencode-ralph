@@ -271,7 +271,7 @@ func manualCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun); err != nil {
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun, *noCommit); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -310,7 +310,7 @@ func runCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, false); err != nil {
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, *noCommit); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

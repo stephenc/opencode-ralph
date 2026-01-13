@@ -5,6 +5,13 @@
 - **Formatter**: `gofmt` (run before committing)
 - **Linter**: `golangci-lint` (if available)
 
+## Build & Verify
+Before marking any task complete, you MUST verify your changes:
+```bash
+go build -o opencode-ralph .
+```
+If the build fails, fix all errors before proceeding. Do not mark a task complete if the code does not compile.
+
 ## Code Style
 
 ### Error Handling
@@ -44,9 +51,18 @@ opencode-ralph/
 - Test edge cases and error paths
 
 ## Git Commits
-- Format: `ralph[N]: brief description`
-- Example: `ralph[3]: implement specs parser`
-- Auto-commits are made by the orchestrator
+Use conventional commits format:
+- `feat:` new feature
+- `fix:` bug fix
+- `docs:` documentation only
+- `refactor:` code change that neither fixes a bug nor adds a feature
+- `chore:` maintenance tasks
+- `test:` adding or updating tests
+
+Examples:
+- `feat: add ASCII art banner on startup`
+- `fix: handle missing config file gracefully`
+- `refactor: remove unused autoCommit function`
 
 ## Dependencies
 - Minimize external dependencies
