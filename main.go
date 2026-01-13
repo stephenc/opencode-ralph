@@ -1,0 +1,563 @@
+package main
+
+import (
+	"bytes"
+	"embed"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"regexp"
+	"strings"
+	"time"
+)
+
+//go:embed templates/*
+var templates embed.FS
+
+// Config holds project configuration
+type Config struct {
+	PromptFile      string `json:"prompt_file"`
+	ConventionsFile string `json:"conventions_file"`
+	SpecsFile       string `json:"specs_file"`
+	MaxIterations   int    `json:"max_iterations"`
+	MaxPerHour      int    `json:"max_per_hour"`
+	MaxPerDay       int    `json:"max_per_day"`
+}
+
+// State tracks iteration history for rate limiting
+type State struct {
+	TotalIterations int       `json:"total_iterations"`
+	Timestamps      []int64   `json:"timestamps"`
+	LastRun         time.Time `json:"last_run"`
+}
+
+const (
+	ralphDir   = ".ralph"
+	configFile = ".ralph/config.json"
+	stateFile  = ".ralph/state.json"
+	notesFile  = ".ralph/notes.md"
+)
+
+func defaultConfig() Config {
+	return Config{
+		PromptFile:      "PROMPT.md",
+		ConventionsFile: "CONVENTIONS.md",
+		SpecsFile:       "SPECS.md",
+		MaxIterations:   50,
+		MaxPerHour:      0,
+		MaxPerDay:       0,
+	}
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		runCmd(os.Args[1:])
+		return
+	}
+
+	switch os.Args[1] {
+	case "init":
+		initCmd(os.Args[2:])
+	case "manual":
+		manualCmd(os.Args[2:])
+	case "run":
+		runCmd(os.Args[2:])
+	case "config":
+		configCmd(os.Args[2:])
+	case "help", "--help", "-h":
+		printHelp()
+	default:
+		if strings.HasPrefix(os.Args[1], "-") {
+			runCmd(os.Args[1:])
+		} else {
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
+			printHelp()
+			os.Exit(1)
+		}
+	}
+}
+
+func printHelp() {
+	fmt.Println(`opencode-ralph - Iterative AI development orchestrator
+
+Usage:
+  opencode-ralph [command] [options]
+
+Commands:
+  init      Create PROMPT.md, CONVENTIONS.md, and stub SPECS.md
+  manual    Run exactly one iteration
+  run       Run multiple iterations until complete (default)
+  config    View or modify configuration
+  help      Show this help message
+
+Run Options:
+  --max-iterations N    Maximum iterations (default: from config or 50)
+  --max-per-hour N      Maximum iterations per hour (default: from config or 0)
+  --max-per-day N       Maximum iterations per day (default: from config or 0)
+  --prompt FILE         Override prompt file path
+  --conventions FILE    Override conventions file path
+  --specs FILE          Override specs file path
+  --verbose             Stream opencode output in real-time
+  --dry-run             Show constructed prompt without executing
+
+Config Commands:
+  config                Show current configuration
+  config set KEY VALUE  Set a configuration value
+  config reset          Reset configuration to defaults
+
+Config Keys:
+  prompt_file, conventions_file, specs_file,
+  max_iterations, max_per_hour, max_per_day
+
+Examples:
+  opencode-ralph init
+  opencode-ralph manual --verbose
+  opencode-ralph run --max-iterations 10
+  opencode-ralph config set specs_file TASKS.md
+  opencode-ralph --specs TASKS.md --max-per-hour 5`)
+}
+
+func initCmd(args []string) {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	fs.Parse(args)
+
+	// Create .ralph directory
+	if err := os.MkdirAll(ralphDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating .ralph directory: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Load or create config
+	cfg := loadConfig()
+
+	// Create PROMPT.md if not exists
+	if err := createFromTemplate(cfg.PromptFile, "templates/PROMPT.md"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create CONVENTIONS.md if not exists
+	if err := createFromTemplate(cfg.ConventionsFile, "templates/CONVENTIONS.md"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create SPECS.md if not exists
+	if err := createFromTemplate(cfg.SpecsFile, "templates/SPECS.md"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Save default config if it doesn't exist
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		saveConfig(cfg)
+		fmt.Println("Created .ralph/config.json")
+	}
+
+	fmt.Printf("\nInitialization complete. Edit %s to define your tasks.\n", cfg.SpecsFile)
+}
+
+func createFromTemplate(destPath, templatePath string) error {
+	if _, err := os.Stat(destPath); !os.IsNotExist(err) {
+		fmt.Printf("%s already exists, skipping\n", destPath)
+		return nil
+	}
+
+	content, err := templates.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("reading template %s: %w", templatePath, err)
+	}
+
+	if err := os.WriteFile(destPath, content, 0644); err != nil {
+		return fmt.Errorf("creating %s: %w", destPath, err)
+	}
+
+	fmt.Printf("Created %s\n", destPath)
+	return nil
+}
+
+func configCmd(args []string) {
+	if len(args) == 0 {
+		// Show current config
+		cfg := loadConfig()
+		data, _ := json.MarshalIndent(cfg, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+
+	switch args[0] {
+	case "set":
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "Usage: config set KEY VALUE")
+			os.Exit(1)
+		}
+		configSet(args[1], args[2])
+	case "reset":
+		cfg := defaultConfig()
+		saveConfig(cfg)
+		fmt.Println("Configuration reset to defaults")
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config command: %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func configSet(key, value string) {
+	cfg := loadConfig()
+
+	switch key {
+	case "prompt_file":
+		cfg.PromptFile = value
+	case "conventions_file":
+		cfg.ConventionsFile = value
+	case "specs_file":
+		cfg.SpecsFile = value
+	case "max_iterations":
+		var v int
+		fmt.Sscanf(value, "%d", &v)
+		cfg.MaxIterations = v
+	case "max_per_hour":
+		var v int
+		fmt.Sscanf(value, "%d", &v)
+		cfg.MaxPerHour = v
+	case "max_per_day":
+		var v int
+		fmt.Sscanf(value, "%d", &v)
+		cfg.MaxPerDay = v
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config key: %s\n", key)
+		os.Exit(1)
+	}
+
+	saveConfig(cfg)
+	fmt.Printf("Set %s = %s\n", key, value)
+}
+
+func manualCmd(args []string) {
+	cfg := loadConfig()
+
+	fs := flag.NewFlagSet("manual", flag.ExitOnError)
+	prompt := fs.String("prompt", "", "Override prompt file")
+	conventions := fs.String("conventions", "", "Override conventions file")
+	specs := fs.String("specs", "", "Override specs file")
+	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
+	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
+	fs.Parse(args)
+
+	// Apply overrides
+	if *prompt != "" {
+		cfg.PromptFile = *prompt
+	}
+	if *conventions != "" {
+		cfg.ConventionsFile = *conventions
+	}
+	if *specs != "" {
+		cfg.SpecsFile = *specs
+	}
+
+	if err := runIterations(cfg, 1, 0, 0, *verbose, *dryRun); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runCmd(args []string) {
+	cfg := loadConfig()
+
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	maxIterations := fs.Int("max-iterations", cfg.MaxIterations, "Maximum iterations")
+	maxPerHour := fs.Int("max-per-hour", cfg.MaxPerHour, "Maximum iterations per hour (0 = unlimited)")
+	maxPerDay := fs.Int("max-per-day", cfg.MaxPerDay, "Maximum iterations per day (0 = unlimited)")
+	prompt := fs.String("prompt", "", "Override prompt file")
+	conventions := fs.String("conventions", "", "Override conventions file")
+	specs := fs.String("specs", "", "Override specs file")
+	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
+	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
+	fs.Parse(args)
+
+	// Apply overrides
+	if *prompt != "" {
+		cfg.PromptFile = *prompt
+	}
+	if *conventions != "" {
+		cfg.ConventionsFile = *conventions
+	}
+	if *specs != "" {
+		cfg.SpecsFile = *specs
+	}
+
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, *verbose, *dryRun); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, verbose, dryRun bool) error {
+	// Ensure .ralph directory exists
+	if err := os.MkdirAll(ralphDir, 0755); err != nil {
+		return fmt.Errorf("creating .ralph directory: %w", err)
+	}
+
+	state := loadState()
+
+	for i := 0; i < maxIterations; i++ {
+		state.TotalIterations++
+		iteration := state.TotalIterations
+
+		fmt.Printf("\n=== Iteration %d (session: %d/%d) ===\n", iteration, i+1, maxIterations)
+
+		// Check rate limits
+		if maxPerHour > 0 || maxPerDay > 0 {
+			hourCount, dayCount := countRecentIterations(state.Timestamps)
+			if maxPerHour > 0 && hourCount >= maxPerHour {
+				fmt.Printf("Rate limit reached: %d iterations in the past hour (max: %d)\n", hourCount, maxPerHour)
+				saveState(state)
+				return nil
+			}
+			if maxPerDay > 0 && dayCount >= maxPerDay {
+				fmt.Printf("Rate limit reached: %d iterations in the past day (max: %d)\n", dayCount, maxPerDay)
+				saveState(state)
+				return nil
+			}
+			fmt.Printf("Rate: %d/hour, %d/day\n", hourCount, dayCount)
+		}
+
+		// Load all files
+		promptMD, err := readFile(cfg.PromptFile)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", cfg.PromptFile, err)
+		}
+
+		conventionsMD, err := readFile(cfg.ConventionsFile)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", cfg.ConventionsFile, err)
+		}
+
+		specsMD, err := readFile(cfg.SpecsFile)
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", cfg.SpecsFile, err)
+		}
+
+		notesMD := readFileOrDefault(notesFile, "No notes yet.")
+
+		// Construct prompt
+		prompt := constructPrompt(promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
+
+		if dryRun {
+			fmt.Println("\n--- DRY RUN: Constructed Prompt ---")
+			fmt.Println(prompt)
+			fmt.Println("--- END DRY RUN ---")
+			return nil
+		}
+
+		// Run opencode
+		output, err := runOpencode(prompt, verbose)
+		if err != nil {
+			fmt.Printf("Warning: opencode exited with error: %v\n", err)
+		}
+
+		// Record this iteration's timestamp
+		state.Timestamps = append(state.Timestamps, time.Now().Unix())
+		state.LastRun = time.Now()
+		pruneOldTimestamps(&state)
+		saveState(state)
+
+		// Extract and save notes
+		if notes := extractNotes(output); notes != "" {
+			if err := appendNotes(notes, iteration); err != nil {
+				fmt.Printf("Warning: failed to save notes: %v\n", err)
+			}
+		}
+
+		// Check for completion signal
+		if isComplete(output) {
+			fmt.Println("Received COMPLETE signal from opencode!")
+			return nil
+		}
+
+		// Auto-commit
+		if err := autoCommit(iteration); err != nil {
+			fmt.Printf("Warning: auto-commit failed: %v\n", err)
+		}
+	}
+
+	fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
+	return nil
+}
+
+func loadConfig() Config {
+	cfg := defaultConfig()
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return cfg
+	}
+	json.Unmarshal(data, &cfg)
+	return cfg
+}
+
+func saveConfig(cfg Config) {
+	os.MkdirAll(ralphDir, 0755)
+	data, _ := json.MarshalIndent(cfg, "", "  ")
+	os.WriteFile(configFile, data, 0644)
+}
+
+func loadState() State {
+	data, err := os.ReadFile(stateFile)
+	if err != nil {
+		return State{Timestamps: []int64{}}
+	}
+	var state State
+	if err := json.Unmarshal(data, &state); err != nil {
+		return State{Timestamps: []int64{}}
+	}
+	if state.Timestamps == nil {
+		state.Timestamps = []int64{}
+	}
+	return state
+}
+
+func saveState(state State) {
+	data, _ := json.MarshalIndent(state, "", "  ")
+	os.WriteFile(stateFile, data, 0644)
+}
+
+func pruneOldTimestamps(state *State) {
+	cutoff := time.Now().Add(-24 * time.Hour).Unix()
+	var kept []int64
+	for _, ts := range state.Timestamps {
+		if ts > cutoff {
+			kept = append(kept, ts)
+		}
+	}
+	state.Timestamps = kept
+}
+
+func countRecentIterations(timestamps []int64) (hourCount, dayCount int) {
+	now := time.Now()
+	hourAgo := now.Add(-time.Hour).Unix()
+	dayAgo := now.Add(-24 * time.Hour).Unix()
+
+	for _, ts := range timestamps {
+		if ts > dayAgo {
+			dayCount++
+			if ts > hourAgo {
+				hourCount++
+			}
+		}
+	}
+	return
+}
+
+func readFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func readFileOrDefault(path, defaultValue string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return defaultValue
+	}
+	return string(data)
+}
+
+func constructPrompt(promptMD, conventionsMD, specsMD, notesMD string, iteration, maxIterations int) string {
+	return fmt.Sprintf(`You are operating in Ralph Wiggum mode.
+
+## Context Files
+
+<prompt>
+%s
+</prompt>
+
+<conventions>
+%s
+</conventions>
+
+<specs>
+%s
+</specs>
+
+<ralph_notes_history>
+%s
+</ralph_notes_history>
+
+## Current Iteration
+Iteration: %d of %d
+`, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
+}
+
+func runOpencode(prompt string, verbose bool) (string, error) {
+	cmd := exec.Command("opencode", "-p", prompt)
+
+	var output bytes.Buffer
+
+	if verbose {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &output)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &output)
+	} else {
+		cmd.Stdout = &output
+		cmd.Stderr = &output
+	}
+
+	err := cmd.Run()
+	return output.String(), err
+}
+
+func extractNotes(output string) string {
+	re := regexp.MustCompile(`(?s)<ralph_notes>(.*?)</ralph_notes>`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) > 1 {
+		return strings.TrimSpace(matches[1])
+	}
+	return ""
+}
+
+func isComplete(output string) bool {
+	re := regexp.MustCompile(`(?si)<ralph_status>\s*COMPLETE\s*</ralph_status>`)
+	return re.MatchString(output)
+}
+
+func appendNotes(notes string, iteration int) error {
+	f, err := os.OpenFile(notesFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	entry := fmt.Sprintf("\n## Iteration %d (%s)\n%s\n", iteration, timestamp, notes)
+	_, err = f.WriteString(entry)
+	return err
+}
+
+func autoCommit(iteration int) error {
+	if _, err := os.Stat(".git"); os.IsNotExist(err) {
+		return nil
+	}
+
+	add := exec.Command("git", "add", "-A")
+	if err := add.Run(); err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
+
+	diff := exec.Command("git", "diff", "--cached", "--quiet")
+	if diff.Run() == nil {
+		return nil
+	}
+
+	msg := fmt.Sprintf("ralph[%d]: iteration complete", iteration)
+	commit := exec.Command("git", "commit", "-m", msg)
+	if err := commit.Run(); err != nil {
+		return fmt.Errorf("git commit: %w", err)
+	}
+
+	fmt.Printf("Auto-committed: %s\n", msg)
+	return nil
+}
