@@ -378,6 +378,8 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		output, err := runOpencode(prompt, model, verbose)
 		if err != nil {
 			fmt.Printf("Warning: opencode exited with error: %v\n", err)
+			// If opencode fails, we still want to continue processing notes
+			// but don't treat this as an error that stops the iteration
 		}
 
 		// Record this iteration's timestamp
@@ -535,7 +537,19 @@ func runOpencode(prompt string, model string, verbose bool) (string, error) {
 	}
 
 	err := cmd.Run()
-	return output.String(), err
+
+	// Check if the error is due to a non-zero exit code
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			// If opencode exits with non-zero code, we should treat this as an error
+			// but still capture the output for notes extraction
+			return string(exitError.Stderr), err
+		}
+		// For other types of errors, return them as is
+		return output.String(), err
+	}
+
+	return output.String(), nil
 }
 
 func extractNotes(output string) string {

@@ -30,7 +30,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator.
 - [x] Launch opencode subprocess with constructed prompt
 - [x] Stream stdout/stderr in real-time (verbose mode)
 - [x] Capture full output for notes extraction
-- [ ] Handle opencode exit codes properly (currently warns but continues)
+- [x] Handle opencode exit codes properly (currently warns but continues)
 - [x] Add --model flag to specify AI model
 
 ## Notes System
