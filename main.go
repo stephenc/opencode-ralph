@@ -25,6 +25,7 @@ type Config struct {
 	MaxIterations   int    `json:"max_iterations"`
 	MaxPerHour      int    `json:"max_per_hour"`
 	MaxPerDay       int    `json:"max_per_day"`
+	Model           string `json:"model,omitempty"`
 }
 
 // State tracks iteration history for rate limiting
@@ -100,6 +101,7 @@ Run Options:
   --prompt FILE         Override prompt file path
   --conventions FILE    Override conventions file path
   --specs FILE          Override specs file path
+  --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
   --verbose             Stream opencode output in real-time
   --dry-run             Show constructed prompt without executing
 
@@ -110,7 +112,7 @@ Config Commands:
 
 Config Keys:
   prompt_file, conventions_file, specs_file,
-  max_iterations, max_per_hour, max_per_day
+  max_iterations, max_per_hour, max_per_day, model
 
 Examples:
   opencode-ralph init
@@ -227,6 +229,8 @@ func configSet(key, value string) {
 		var v int
 		fmt.Sscanf(value, "%d", &v)
 		cfg.MaxPerDay = v
+	case "model":
+		cfg.Model = value
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown config key: %s\n", key)
 		os.Exit(1)
@@ -243,6 +247,7 @@ func manualCmd(args []string) {
 	prompt := fs.String("prompt", "", "Override prompt file")
 	conventions := fs.String("conventions", "", "Override conventions file")
 	specs := fs.String("specs", "", "Override specs file")
+	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
 	fs.Parse(args)
@@ -258,7 +263,13 @@ func manualCmd(args []string) {
 		cfg.SpecsFile = *specs
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, *verbose, *dryRun); err != nil {
+	// Use model from flag, or fall back to config
+	modelToUse := *model
+	if modelToUse == "" {
+		modelToUse = cfg.Model
+	}
+
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -274,6 +285,7 @@ func runCmd(args []string) {
 	prompt := fs.String("prompt", "", "Override prompt file")
 	conventions := fs.String("conventions", "", "Override conventions file")
 	specs := fs.String("specs", "", "Override specs file")
+	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
 	fs.Parse(args)
@@ -289,13 +301,19 @@ func runCmd(args []string) {
 		cfg.SpecsFile = *specs
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, *verbose, *dryRun); err != nil {
+	// Use model from flag, or fall back to config
+	modelToUse := *model
+	if modelToUse == "" {
+		modelToUse = cfg.Model
+	}
+
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, verbose, dryRun bool) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun bool) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -354,7 +372,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, verbose
 		}
 
 		// Run opencode
-		output, err := runOpencode(prompt, verbose)
+		output, err := runOpencode(prompt, model, verbose)
 		if err != nil {
 			fmt.Printf("Warning: opencode exited with error: %v\n", err)
 		}
@@ -493,8 +511,13 @@ Iteration: %d of %d
 `, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
 }
 
-func runOpencode(prompt string, verbose bool) (string, error) {
-	cmd := exec.Command("opencode", "-p", prompt)
+func runOpencode(prompt string, model string, verbose bool) (string, error) {
+	args := []string{"run"}
+	if model != "" {
+		args = append(args, "-m", model)
+	}
+	args = append(args, prompt)
+	cmd := exec.Command("opencode", args...)
 
 	var output bytes.Buffer
 
