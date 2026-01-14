@@ -56,6 +56,66 @@ const banner = `
 opencode-ralph
 `
 
+const (
+	ansiReset  = "\033[0m"
+	ansiBold   = "\033[1m"
+	ansiRed    = "\033[31m"
+	ansiGreen  = "\033[32m"
+	ansiYellow = "\033[33m"
+	ansiCyan   = "\033[36m"
+	ansiGray   = "\033[90m"
+)
+
+func shouldUseColor(quiet bool) bool {
+	if quiet {
+		return false
+	}
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+func style(text string, codes ...string) string {
+	if len(codes) == 0 {
+		return text
+	}
+
+	var b strings.Builder
+	for _, code := range codes {
+		b.WriteString(code)
+	}
+	b.WriteString(text)
+	b.WriteString(ansiReset)
+	return b.String()
+}
+
+func styleIf(enabled bool, text string, codes ...string) string {
+	if !enabled {
+		return text
+	}
+	return style(text, codes...)
+}
+
+func statusStyle(status string) (string, []string) {
+	switch strings.ToLower(status) {
+	case "complete":
+		return strings.ToUpper(status), []string{ansiGreen, ansiBold}
+	case "rate_limited", "max_iterations":
+		return strings.ToUpper(status), []string{ansiYellow, ansiBold}
+	case "dry_run":
+		return strings.ToUpper(status), []string{ansiCyan, ansiBold}
+	case "unknown":
+		return strings.ToUpper(status), []string{ansiGray}
+	default:
+		return strings.ToUpper(status), []string{ansiGray}
+	}
+}
+
 type stringSliceFlag []string
 
 func (s *stringSliceFlag) String() string {
@@ -416,6 +476,7 @@ func runCmd(args []string) {
 func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, quiet bool, verbose, dryRun bool, delay float64) (err error) {
 	startTime := time.Now()
 	showSummary := !quiet && !dryRun
+	useColor := shouldUseColor(quiet)
 	finalStatus := "unknown"
 	sessionIterations := 0
 	defer func() {
@@ -426,7 +487,8 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		fmt.Println("\n--- Summary ---")
 		fmt.Printf("Iterations: %d\n", sessionIterations)
 		fmt.Printf("Duration: %s\n", duration)
-		fmt.Printf("Status: %s\n", strings.ToUpper(finalStatus))
+		label, codes := statusStyle(finalStatus)
+		fmt.Printf("Status: %s\n", styleIf(useColor, label, codes...))
 	}()
 
 	// Ensure .ralph directory exists
@@ -462,7 +524,8 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		iteration := state.TotalIterations
 
 		if !quiet {
-			fmt.Printf("\n=== Iteration %d (session: %d/%d) ===\n", iteration, i+1, maxIterations)
+			header := fmt.Sprintf("=== Iteration %d (session: %d/%d) ===", iteration, i+1, maxIterations)
+			fmt.Printf("\n%s\n", styleIf(useColor, header, ansiCyan, ansiBold))
 		}
 
 		// Check rate limits
@@ -470,7 +533,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 			hourCount, dayCount := countRecentIterations(state.Timestamps)
 			if maxPerHour > 0 && hourCount >= maxPerHour {
 				if !quiet {
-					fmt.Printf("Rate limit reached: %d iterations in the past hour (max: %d)\n", hourCount, maxPerHour)
+					fmt.Printf("%s\n", styleIf(useColor, fmt.Sprintf("Rate limit reached: %d iterations in the past hour (max: %d)", hourCount, maxPerHour), ansiYellow, ansiBold))
 				}
 				finalStatus = "rate_limited"
 				saveState(state)
@@ -478,7 +541,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 			}
 			if maxPerDay > 0 && dayCount >= maxPerDay {
 				if !quiet {
-					fmt.Printf("Rate limit reached: %d iterations in the past day (max: %d)\n", dayCount, maxPerDay)
+					fmt.Printf("%s\n", styleIf(useColor, fmt.Sprintf("Rate limit reached: %d iterations in the past day (max: %d)", dayCount, maxPerDay), ansiYellow, ansiBold))
 				}
 				finalStatus = "rate_limited"
 				saveState(state)
@@ -522,7 +585,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		output, err := runOpencode(prompt, model, agent, format, variant, attach, port, continueSession, session, files, title, quiet, verbose)
 		if err != nil {
 			if !quiet {
-				fmt.Printf("Warning: opencode exited with error: %v\n", err)
+				fmt.Printf("%s\n", styleIf(useColor, fmt.Sprintf("Warning: opencode exited with error: %v", err), ansiYellow, ansiBold))
 			}
 			// If opencode fails, we still want to continue processing notes
 			// but don't treat this as an error that stops the iteration
@@ -542,7 +605,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		if isComplete(output) {
 			finalStatus = "complete"
 			if !quiet {
-				fmt.Println("Received COMPLETE signal from opencode!")
+				fmt.Println(styleIf(useColor, "Received COMPLETE signal from opencode!", ansiGreen, ansiBold))
 			}
 			return nil
 		}
@@ -560,7 +623,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 	}
 
 	if !quiet {
-		fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
+		fmt.Printf("%s\n", styleIf(useColor, fmt.Sprintf("Reached maximum iterations (%d)", maxIterations), ansiYellow, ansiBold))
 	}
 	finalStatus = "max_iterations"
 	return nil
