@@ -67,7 +67,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator that drives 
 Goal: match a clean Go project layout and keep specs implementation-agnostic.
 
 - [x] Migrate CLI to `cobra` (root command + `init`, `run`, `manual`, `config` subcommands)
-- [ ] Restructure packages to:
+- [x] Restructure packages to:
   - `main.go` (calls `cmd.Execute()`)
   - `cmd/` (cobra commands and flags)
   - `internal/ralph/` (all orchestration logic)
