@@ -88,7 +88,7 @@ Goal: match a clean Go project layout and keep specs implementation-agnostic.
 Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not attempt to mirror every flag).
 
 - [x] Add `--agent` passthrough to `opencode run --agent`
-- [ ] Add `--format` passthrough to `opencode run --format` (`default` or `json`)
+- [x] Add `--format` passthrough to `opencode run --format` (`default` or `json`)
 - [ ] Add session passthroughs:
   - `--continue` to `opencode run --continue`
   - `--session` to `opencode run --session`

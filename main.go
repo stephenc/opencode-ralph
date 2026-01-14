@@ -106,6 +106,7 @@ Run Options:
    --conventions FILE    Override conventions file path
    --specs FILE          Override specs file path
    --agent AGENT         Agent to use (passed to opencode run --agent)
+   --format FORMAT       Output format (passed to opencode run --format; default|json)
    --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
    --verbose             Stream opencode output in real-time
    --dry-run             Show constructed prompt without executing
@@ -254,6 +255,7 @@ func manualCmd(args []string) {
 	conventions := fs.String("conventions", "", "Override conventions file")
 	specs := fs.String("specs", "", "Override specs file")
 	agent := fs.String("agent", "", "Agent to use (passed to opencode run --agent)")
+	format := fs.String("format", "", "Output format (passed to opencode run --format; default|json)")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -278,7 +280,12 @@ func manualCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *verbose, *dryRun, *delay); err != nil {
+	if *format != "" && *format != "default" && *format != "json" {
+		fmt.Fprintf(os.Stderr, "Invalid --format value: %s (expected default or json)\n", *format)
+		os.Exit(1)
+	}
+
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -295,6 +302,7 @@ func runCmd(args []string) {
 	conventions := fs.String("conventions", "", "Override conventions file")
 	specs := fs.String("specs", "", "Override specs file")
 	agent := fs.String("agent", "", "Agent to use (passed to opencode run --agent)")
+	format := fs.String("format", "", "Output format (passed to opencode run --format; default|json)")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -318,13 +326,18 @@ func runCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *verbose, *dryRun, *delay); err != nil {
+	if *format != "" && *format != "default" && *format != "json" {
+		fmt.Fprintf(os.Stderr, "Invalid --format value: %s (expected default or json)\n", *format)
+		os.Exit(1)
+	}
+
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, verbose, dryRun bool, delay float64) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, verbose, dryRun bool, delay float64) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -398,7 +411,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		}
 
 		// Run opencode
-		output, err := runOpencode(prompt, model, agent, verbose)
+		output, err := runOpencode(prompt, model, agent, format, verbose)
 		if err != nil {
 			fmt.Printf("Warning: opencode exited with error: %v\n", err)
 			// If opencode fails, we still want to continue processing notes
@@ -655,13 +668,16 @@ Iteration: %d of %d
 `, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
 }
 
-func runOpencode(prompt string, model string, agent string, verbose bool) (string, error) {
+func runOpencode(prompt string, model string, agent string, format string, verbose bool) (string, error) {
 	args := []string{"run"}
 	if model != "" {
 		args = append(args, "-m", model)
 	}
 	if agent != "" {
 		args = append(args, "--agent", agent)
+	}
+	if format != "" {
+		args = append(args, "--format", format)
 	}
 	args = append(args, prompt)
 	cmd := exec.Command("opencode", args...)
