@@ -72,8 +72,8 @@ Goal: match a clean Go project layout and keep specs implementation-agnostic.
   - `cmd/` (cobra commands and flags)
   - `internal/ralph/` (all orchestration logic)
 - [ ] Split `internal/ralph/` into focused modules:
-  - `config.go` (config + persistence)
-  - `state.go` (state + rate limiting)
+  - [x] `config.go` (config + persistence)
+  - [ ] `state.go` (state + rate limiting)
   - `orchestrator.go` (iteration loop)
   - `runner.go` (opencode runner interface + implementation)
   - `prompt.go` (prompt construction)
