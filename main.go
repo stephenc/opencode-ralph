@@ -843,6 +843,9 @@ func constructPrompt(promptMD, conventionsMD, specsMD, notesMD string, iteration
 %s
 </conventions>
 
+NOTE: The full, current contents of the specs are included below in <specs>.
+Do not re-read SPECS.md unless you have modified it and need to confirm your updates.
+
 <specs>
 %s
 </specs>

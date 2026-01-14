@@ -25,6 +25,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator that drives 
 - [x] Include iteration number and max in prompt
 - [x] Format with XML-style tags for sections
 - [x] Use `<ralph_notes>` and `<ralph_status>` tag names
+- [x] Make it clear that the current contents of the specs have been provided in the full constructed prompt to avoid burning extra tokens re-reading the specs.
 
 ## OpenCode Integration
 - [x] Launch `opencode` subprocess with constructed prompt
