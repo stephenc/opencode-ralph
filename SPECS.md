@@ -60,7 +60,7 @@ opencode commit as part of each run.
 - [x] Create .ralph/ directory if not exists
 - [x] Track iteration timestamps for rate limiting
 - [x] Prune old timestamps (keep 24 hours)
-- [ ] Implement lock file to prevent concurrent runs
+- [x] Implement lock file to prevent concurrent runs
 - [ ] Clean up lock on exit (including signals)
 
 ## Polish

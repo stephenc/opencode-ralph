@@ -40,6 +40,7 @@ const (
 	configFile = ".ralph/config.json"
 	stateFile  = ".ralph/state.json"
 	notesFile  = ".ralph/notes.md"
+	lockFile   = ".ralph/lock"
 )
 
 func defaultConfig() Config {
@@ -323,6 +324,18 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		return fmt.Errorf("creating .ralph directory: %w", err)
 	}
 
+	locked, err := acquireLock(lockFile)
+	if err != nil {
+		return fmt.Errorf("acquiring lock: %w", err)
+	}
+	if locked {
+		defer func() {
+			if err := releaseLock(lockFile); err != nil {
+				fmt.Printf("Warning: failed to release lock: %v\n", err)
+			}
+		}()
+	}
+
 	state := loadState()
 
 	for i := 0; i < maxIterations; i++ {
@@ -402,66 +415,13 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		pruneOldTimestamps(&state)
 		saveState(state)
 
-		// Record this iteration's timestamp
-		state.Timestamps = append(state.Timestamps, time.Now().Unix())
-		state.LastRun = time.Now()
-		pruneOldTimestamps(&state)
-		saveState(state)
-
-		// Extract and save notes
-		if notes := extractNotes(output); notes != "" {
-			if err := appendNotes(notes, iteration); err != nil {
-				fmt.Printf("Warning: failed to save notes: %v\n", err)
-			}
+		// Delay between iterations
+		if delay > 0 {
+			time.Sleep(time.Duration(delay) * time.Second)
 		}
-
-		// Check for completion signal
-		if isComplete(output) {
-			fmt.Println("Received COMPLETE signal from opencode!")
-			return nil
-		}
-
-		// Extract and save notes
-		if notes := extractNotes(output); notes != "" {
-			if err := appendNotes(notes, iteration); err != nil {
-				fmt.Printf("Warning: failed to save notes: %v\n", err)
-			}
-		}
-
-		// Check for completion signal
-		if isComplete(output) {
-			fmt.Println("Received COMPLETE signal from opencode!")
-			return nil
-		}
-
-		// Record this iteration's timestamp
-		state.Timestamps = append(state.Timestamps, time.Now().Unix())
-		state.LastRun = time.Now()
-		pruneOldTimestamps(&state)
-		saveState(state)
-
-		// Extract and save notes
-		if notes := extractNotes(output); notes != "" {
-			if err := appendNotes(notes, iteration); err != nil {
-				fmt.Printf("Warning: failed to save notes: %v\n", err)
-			}
-		}
-
-		// Check for completion signal
-		if isComplete(output) {
-			fmt.Println("Received COMPLETE signal from opencode!")
-			return nil
-		}
-
 	}
 
 	fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
-
-	// Add delay between iterations
-	if delay > 0 {
-		time.Sleep(time.Duration(delay) * time.Second)
-	}
-
 	return nil
 }
 
@@ -499,6 +459,35 @@ func loadState() State {
 func saveState(state State) {
 	data, _ := json.MarshalIndent(state, "", "  ")
 	os.WriteFile(stateFile, data, 0644)
+}
+
+func acquireLock(path string) (bool, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	if err != nil {
+		if os.IsExist(err) {
+			return false, fmt.Errorf("lock file %s exists; another run may be active", path)
+		}
+		return false, err
+	}
+	defer f.Close()
+
+	if _, err := fmt.Fprintf(f, "%d\n", os.Getpid()); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return false, err
+	}
+
+	return true, nil
+}
+
+func releaseLock(path string) error {
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func pruneOldTimestamps(state *State) {
