@@ -28,7 +28,7 @@ You determine completion by examining SPECS.md content. Update it appropriately 
 - **BE HONEST IN NOTES** - Report blockers, failures, and suggestions
 - **VERIFY YOUR CHANGES** - Build/compile/test as described in conventions before marking complete
 - **COMPLETE REFACTORS ATOMICALLY** - If removing a feature, update ALL usages in the same iteration
-- **COMMIT YOUR WORK** - After completing the task, create a git commit using conventional commits (fix:, feat:, docs:, chore:, refactor:)
+- **COMMIT YOUR WORK (EVERY ITERATION)** - After completing the task and updating SPECS.md, create exactly ONE git commit for the iteration
 - **COMMIT MUST INCLUDE IMPLEMENTATION** - The commit must contain the actual code changes, not just SPECS.md updates
 - **STOP AFTER COMMITTING** - Once you commit, output your `<ralph_notes>` and STOP. Do not continue working.
 

@@ -46,8 +46,8 @@ opencode commit as part of each run.
 
 - [ ] Remove ralph's auto-commit code (autoCommit function and calls)
 - [x] Remove --no-commit flag (no longer needed)
-- [ ] Update PROMPT.md to instruct opencode to commit after completing each task
-- [ ] Require conventional commits style (fix:, feat:, docs:, test:, chore:, etc.)
+- [x] Update PROMPT.md to instruct opencode to commit after completing each task
+- [x] Require conventional commits style (fix:, feat:, docs:, test:, chore:, etc.)
 
 ## Orchestration Loop
 - [x] Implement main loop with iteration counter
