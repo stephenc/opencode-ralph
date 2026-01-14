@@ -105,7 +105,6 @@ Run Options:
    --verbose             Stream opencode output in real-time
    --dry-run             Show constructed prompt without executing
    --delay SECONDS       Delay between iterations (default: 2s)
-   --no-commit           Disable auto-commit after each iteration
 
 Config Commands:
   config                Show current configuration
@@ -252,8 +251,8 @@ func manualCmd(args []string) {
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
-	noCommit := fs.Bool("no-commit", false, "Disable auto-commit after iterations")
 	delay := fs.Float64("delay", 2.0, "Delay between iterations in seconds")
+
 	fs.Parse(args)
 
 	// Apply overrides
@@ -273,7 +272,7 @@ func manualCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun, *noCommit, *delay); err != nil {
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -292,7 +291,6 @@ func runCmd(args []string) {
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
-	noCommit := fs.Bool("no-commit", false, "Disable auto-commit after iterations")
 	delay := fs.Float64("delay", 2.0, "Delay between iterations in seconds")
 	fs.Parse(args)
 
@@ -313,13 +311,13 @@ func runCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, *noCommit, *delay); err != nil {
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun, noCommit bool, delay float64) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun bool, delay float64) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -594,10 +592,10 @@ func runOpencode(prompt string, model string, verbose bool) (string, error) {
 
 	// Check if the error is due to a non-zero exit code
 	if err != nil {
-		if exitError, ok := err.(*exec.ExitError); ok {
+		if _, ok := err.(*exec.ExitError); ok {
 			// If opencode exits with non-zero code, we should treat this as an error
 			// but still capture the output for notes extraction
-			return string(exitError.Stderr), err
+			return output.String(), err
 		}
 		// For other types of errors, return them as is
 		return output.String(), err
@@ -631,29 +629,4 @@ func appendNotes(notes string, iteration int) error {
 	entry := fmt.Sprintf("\n## Iteration %d (%s)\n%s\n", iteration, timestamp, notes)
 	_, err = f.WriteString(entry)
 	return err
-}
-
-func autoCommit(iteration int) error {
-	if _, err := os.Stat(".git"); os.IsNotExist(err) {
-		return nil
-	}
-
-	add := exec.Command("git", "add", "-A")
-	if err := add.Run(); err != nil {
-		return fmt.Errorf("git add: %w", err)
-	}
-
-	diff := exec.Command("git", "diff", "--cached", "--quiet")
-	if diff.Run() == nil {
-		return nil
-	}
-
-	msg := fmt.Sprintf("ralph[%d]: iteration complete", iteration)
-	commit := exec.Command("git", "commit", "-m", msg)
-	if err := commit.Run(); err != nil {
-		return fmt.Errorf("git commit: %w", err)
-	}
-
-	fmt.Printf("Auto-committed: %s\n", msg)
-	return nil
 }
