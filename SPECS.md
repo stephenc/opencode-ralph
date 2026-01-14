@@ -106,7 +106,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [ ] Add colored output for status messages and iteration headers
 - [ ] Respect `NO_COLOR` environment variable for all colors
 - [x] Display ASCII art banner on startup (disabled by `--quiet`)
-- [ ] Display summary at end of run (iterations, duration, final status; suppressed by `--quiet`)
+- [x] Display summary at end of run (iterations, duration, final status; suppressed by `--quiet`)
 
 ## Robustness
 - [x] Handle Ctrl+C gracefully (SIGINT/SIGTERM): release lock and exit cleanly

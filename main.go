@@ -413,7 +413,22 @@ func runCmd(args []string) {
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, quiet bool, verbose, dryRun bool, delay float64) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, quiet bool, verbose, dryRun bool, delay float64) (err error) {
+	startTime := time.Now()
+	showSummary := !quiet && !dryRun
+	finalStatus := "unknown"
+	sessionIterations := 0
+	defer func() {
+		if err != nil || !showSummary {
+			return
+		}
+		duration := time.Since(startTime).Truncate(time.Millisecond)
+		fmt.Println("\n--- Summary ---")
+		fmt.Printf("Iterations: %d\n", sessionIterations)
+		fmt.Printf("Duration: %s\n", duration)
+		fmt.Printf("Status: %s\n", strings.ToUpper(finalStatus))
+	}()
+
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -429,8 +444,9 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 
 		defer func() {
 			if err := releaseLock(lockFile); err != nil {
-				fmt.Printf("Warning: failed to release lock: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Warning: failed to release lock: %v\n", err)
 			}
+
 		}()
 	}
 
@@ -441,6 +457,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 	}
 
 	for i := 0; i < maxIterations; i++ {
+		sessionIterations++
 		state.TotalIterations++
 		iteration := state.TotalIterations
 
@@ -455,6 +472,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 				if !quiet {
 					fmt.Printf("Rate limit reached: %d iterations in the past hour (max: %d)\n", hourCount, maxPerHour)
 				}
+				finalStatus = "rate_limited"
 				saveState(state)
 				return nil
 			}
@@ -462,6 +480,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 				if !quiet {
 					fmt.Printf("Rate limit reached: %d iterations in the past day (max: %d)\n", dayCount, maxPerDay)
 				}
+				finalStatus = "rate_limited"
 				saveState(state)
 				return nil
 			}
@@ -495,6 +514,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 			fmt.Println("\n--- DRY RUN: Constructed Prompt ---")
 			fmt.Println(prompt)
 			fmt.Println("--- END DRY RUN ---")
+			finalStatus = "dry_run"
 			return nil
 		}
 
@@ -512,13 +532,15 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		if notes := extractNotes(output); notes != "" {
 			if err := appendNotes(notes, iteration); err != nil {
 				if !quiet {
-					fmt.Printf("Warning: failed to save notes: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to save notes: %v\n", err)
+
 				}
 			}
 		}
 
 		// Check for completion signal
 		if isComplete(output) {
+			finalStatus = "complete"
 			if !quiet {
 				fmt.Println("Received COMPLETE signal from opencode!")
 			}
@@ -540,6 +562,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 	if !quiet {
 		fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
 	}
+	finalStatus = "max_iterations"
 	return nil
 }
 
