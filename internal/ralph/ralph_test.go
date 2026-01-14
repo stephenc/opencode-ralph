@@ -1,8 +1,8 @@
 package ralph
 
 import (
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -231,29 +231,50 @@ func TestPruneOldTimestamps(t *testing.T) {
 	}
 }
 
-func TestIsProcessRunning(t *testing.T) {
-	cmd := exec.Command("sleep", "0.2")
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("start sleep: %v", err)
-	}
-	pid := cmd.Process.Pid
+func TestOrchestratorUsesRunnerAndStopsOnComplete(t *testing.T) {
+	withTempCWD(t)
 
-	if !isProcessRunning(pid) {
-		t.Fatalf("expected process to be running")
+	cfg := DefaultConfig()
+	cfg.PromptFile = "PROMPT.md"
+	cfg.ConventionsFile = "CONVENTIONS.md"
+	cfg.SpecsFile = "SPECS.md"
+
+	if err := os.WriteFile(cfg.PromptFile, []byte("PROMPT"), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+	if err := os.WriteFile(cfg.ConventionsFile, []byte("CONVENTIONS"), 0o644); err != nil {
+		t.Fatalf("write conventions: %v", err)
+	}
+	if err := os.WriteFile(cfg.SpecsFile, []byte("SPECS"), 0o644); err != nil {
+		t.Fatalf("write specs: %v", err)
 	}
 
-	if err := cmd.Wait(); err != nil {
-		t.Fatalf("wait sleep: %v", err)
+	var calls int
+	runner := &fakeRunner{
+		runFunc: func(args OpencodeRunArgs) (string, error) {
+			calls++
+			if args.Prompt == "" {
+				return "", fmt.Errorf("expected prompt to be set")
+			}
+			return "<ralph_status>COMPLETE</ralph_status>", nil
+		},
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if !isProcessRunning(pid) {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if err := runIterationsWithRunner(cfg, 3, 0, 0, "", "", "", "", "", 0, false, "", nil, "", true, false, false, 0, runner); err != nil {
+		t.Fatalf("runIterationsWithRunner: %v", err)
 	}
-	if isProcessRunning(pid) {
-		t.Fatalf("expected process to be not running")
+	if calls != 1 {
+		t.Fatalf("runner calls: got %d want %d", calls, 1)
 	}
+}
+
+type fakeRunner struct {
+	runFunc func(OpencodeRunArgs) (string, error)
+}
+
+func (r *fakeRunner) Run(args OpencodeRunArgs) (string, error) {
+	if r.runFunc == nil {
+		return "", fmt.Errorf("fakeRunner missing runFunc")
+	}
+	return r.runFunc(args)
 }

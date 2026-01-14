@@ -344,7 +344,37 @@ func RunWithOptions(opts RunOptions, defaultMaxIterations, defaultMaxPerHour, de
 	return runIterations(cfg, maxIterations, maxPerHour, maxPerDay, modelToUse, opts.Agent, opts.Format, opts.Variant, opts.Attach, opts.Port, opts.ContinueSession, opts.Session, opts.Files, opts.Title, quiet, verbose, opts.DryRun, opts.Delay)
 }
 
+type OpencodeRunArgs struct {
+	Prompt          string
+	Model           string
+	Agent           string
+	Format          string
+	Variant         string
+	Attach          string
+	Port            int
+	ContinueSession bool
+	Session         string
+	Files           []string
+	Title           string
+	Quiet           bool
+	Verbose         bool
+}
+
+type OpencodeRunner interface {
+	Run(args OpencodeRunArgs) (string, error)
+}
+
+type execOpencodeRunner struct{}
+
+func (execOpencodeRunner) Run(args OpencodeRunArgs) (string, error) {
+	return runOpencode(args)
+}
+
 func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files []string, title string, quiet bool, verbose, dryRun bool, delay float64) (err error) {
+	return runIterationsWithRunner(cfg, maxIterations, maxPerHour, maxPerDay, model, agent, format, variant, attach, port, continueSession, session, files, title, quiet, verbose, dryRun, delay, execOpencodeRunner{})
+}
+
+func runIterationsWithRunner(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files []string, title string, quiet bool, verbose, dryRun bool, delay float64, runner OpencodeRunner) (err error) {
 	startTime := time.Now()
 	showSummary := !quiet && !dryRun
 	useColor := shouldUseColor(quiet)
@@ -443,7 +473,21 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 			return nil
 		}
 
-		output, runErr := runOpencode(prompt, model, agent, format, variant, attach, port, continueSession, session, files, title, quiet, verbose)
+		output, runErr := runner.Run(OpencodeRunArgs{
+			Prompt:          prompt,
+			Model:           model,
+			Agent:           agent,
+			Format:          format,
+			Variant:         variant,
+			Attach:          attach,
+			Port:            port,
+			ContinueSession: continueSession,
+			Session:         session,
+			Files:           files,
+			Title:           title,
+			Quiet:           quiet,
+			Verbose:         verbose,
+		})
 		if runErr != nil {
 			if !quiet {
 				fmt.Printf("%s\n", styleIf(useColor, fmt.Sprintf("Warning: opencode exited with error: %v", runErr), ansiYellow, ansiBold))
@@ -578,46 +622,46 @@ Iteration: %d of %d
 `, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
 }
 
-func runOpencode(prompt string, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files []string, title string, quiet bool, verbose bool) (string, error) {
+func runOpencode(runArgs OpencodeRunArgs) (string, error) {
 	args := []string{"run"}
-	if model != "" {
-		args = append(args, "-m", model)
+	if runArgs.Model != "" {
+		args = append(args, "-m", runArgs.Model)
 	}
-	if agent != "" {
-		args = append(args, "--agent", agent)
+	if runArgs.Agent != "" {
+		args = append(args, "--agent", runArgs.Agent)
 	}
-	if format != "" {
-		args = append(args, "--format", format)
+	if runArgs.Format != "" {
+		args = append(args, "--format", runArgs.Format)
 	}
-	if variant != "" {
-		args = append(args, "--variant", variant)
+	if runArgs.Variant != "" {
+		args = append(args, "--variant", runArgs.Variant)
 	}
-	if attach != "" {
-		args = append(args, "--attach", attach)
+	if runArgs.Attach != "" {
+		args = append(args, "--attach", runArgs.Attach)
 	}
-	if port != 0 {
-		args = append(args, "--port", fmt.Sprintf("%d", port))
+	if runArgs.Port != 0 {
+		args = append(args, "--port", fmt.Sprintf("%d", runArgs.Port))
 	}
-	if continueSession {
+	if runArgs.ContinueSession {
 		args = append(args, "--continue")
 	}
-	if session != "" {
-		args = append(args, "--session", session)
+	if runArgs.Session != "" {
+		args = append(args, "--session", runArgs.Session)
 	}
-	for _, file := range files {
+	for _, file := range runArgs.Files {
 		if file != "" {
 			args = append(args, "--file", file)
 		}
 	}
-	if title != "" {
-		args = append(args, "--title", title)
+	if runArgs.Title != "" {
+		args = append(args, "--title", runArgs.Title)
 	}
-	args = append(args, prompt)
+	args = append(args, runArgs.Prompt)
 	cmd := exec.Command("opencode", args...)
 
 	var output bytes.Buffer
 
-	if verbose || quiet {
+	if runArgs.Verbose || runArgs.Quiet {
 		cmd.Stdout = io.MultiWriter(os.Stdout, &output)
 		cmd.Stderr = io.MultiWriter(os.Stderr, &output)
 	} else {
