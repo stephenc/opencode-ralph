@@ -105,7 +105,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [x] In `--quiet` mode, always stream `opencode` output (even if not `--verbose`)
 - [ ] Add colored output for status messages and iteration headers
 - [ ] Respect `NO_COLOR` environment variable for all colors
-- [ ] Display ASCII art banner on startup (disabled by `--quiet`)
+- [x] Display ASCII art banner on startup (disabled by `--quiet`)
 - [ ] Display summary at end of run (iterations, duration, final status; suppressed by `--quiet`)
 
 ## Robustness

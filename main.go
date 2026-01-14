@@ -46,6 +46,16 @@ const (
 	lockFile   = ".ralph/lock"
 )
 
+const banner = `
+   ____  ____  ____  _   _
+  / __ \/ __ \/ __ \/ | / /
+ / / / / /_/ / /_/ /  |/ / 
+/ /_/ / ____/ ____/ /|  /  
+\____/_/   /_/   /_/ |_/   
+
+opencode-ralph
+`
+
 type stringSliceFlag []string
 
 func (s *stringSliceFlag) String() string {
@@ -425,6 +435,10 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 	}
 
 	state := loadState()
+
+	if !quiet {
+		fmt.Print(banner)
+	}
 
 	for i := 0; i < maxIterations; i++ {
 		state.TotalIterations++
