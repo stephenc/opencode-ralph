@@ -657,15 +657,21 @@ func installLockSignalHandler(lockPath string) func() {
 	go func() {
 		select {
 		case sig := <-c:
-			if err := releaseLock(lockPath); err != nil {
-				fmt.Printf("Warning: failed to release lock: %v\n", err)
-			}
 			signal.Stop(c)
 			close(done)
-			// Re-raise to get default exit behavior.
-			if s, ok := sig.(syscall.Signal); ok {
-				_ = syscall.Kill(os.Getpid(), s)
+
+			if err := releaseLock(lockPath); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to release lock: %v\n", err)
 			}
+
+			exitCode := 1
+			switch sig {
+			case syscall.SIGINT:
+				exitCode = 130
+			case syscall.SIGTERM:
+				exitCode = 143
+			}
+			os.Exit(exitCode)
 		case <-done:
 			signal.Stop(c)
 			return
