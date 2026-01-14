@@ -89,7 +89,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 
 - [x] Add `--agent` passthrough to `opencode run --agent`
 - [x] Add `--format` passthrough to `opencode run --format` (`default` or `json`)
-- [ ] Add session passthroughs:
+- [x] Add session passthroughs:
   - `--continue` to `opencode run --continue`
   - `--session` to `opencode run --session`
 - [ ] Add message attachment passthroughs:

@@ -102,15 +102,18 @@ Run Options:
   --max-iterations N    Maximum iterations (default: from config or 50)
   --max-per-hour N      Maximum iterations per hour (default: from config or 0)
   --max-per-day N       Maximum iterations per day (default: from config or 0)
-   --prompt FILE         Override prompt file path
-   --conventions FILE    Override conventions file path
-   --specs FILE          Override specs file path
-   --agent AGENT         Agent to use (passed to opencode run --agent)
-   --format FORMAT       Output format (passed to opencode run --format; default|json)
-   --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
-   --verbose             Stream opencode output in real-time
-   --dry-run             Show constructed prompt without executing
-   --delay SECONDS       Delay between iterations (default: 2s)
+  --prompt FILE         Override prompt file path
+  --conventions FILE    Override conventions file path
+  --specs FILE          Override specs file path
+  --agent AGENT         Agent to use (passed to opencode run --agent)
+  --format FORMAT       Output format (passed to opencode run --format; default|json)
+  --continue            Continue a previous session (passed to opencode run --continue)
+  --session SESSION     Session ID (passed to opencode run --session)
+  --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
+  --verbose             Stream opencode output in real-time
+  --dry-run             Show constructed prompt without executing
+  --delay SECONDS       Delay between iterations (default: 2s)
+
 
 Config Commands:
   config                Show current configuration
@@ -256,6 +259,8 @@ func manualCmd(args []string) {
 	specs := fs.String("specs", "", "Override specs file")
 	agent := fs.String("agent", "", "Agent to use (passed to opencode run --agent)")
 	format := fs.String("format", "", "Output format (passed to opencode run --format; default|json)")
+	continueSession := fs.Bool("continue", false, "Continue a previous session (passed to opencode run --continue)")
+	session := fs.String("session", "", "Session ID (passed to opencode run --session)")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -284,8 +289,12 @@ func manualCmd(args []string) {
 		fmt.Fprintf(os.Stderr, "Invalid --format value: %s (expected default or json)\n", *format)
 		os.Exit(1)
 	}
+	if *continueSession && *session != "" {
+		fmt.Fprintln(os.Stderr, "Invalid flags: --continue and --session are mutually exclusive")
+		os.Exit(1)
+	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *verbose, *dryRun, *delay); err != nil {
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *continueSession, *session, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -303,6 +312,8 @@ func runCmd(args []string) {
 	specs := fs.String("specs", "", "Override specs file")
 	agent := fs.String("agent", "", "Agent to use (passed to opencode run --agent)")
 	format := fs.String("format", "", "Output format (passed to opencode run --format; default|json)")
+	continueSession := fs.Bool("continue", false, "Continue a previous session (passed to opencode run --continue)")
+	session := fs.String("session", "", "Session ID (passed to opencode run --session)")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -330,14 +341,18 @@ func runCmd(args []string) {
 		fmt.Fprintf(os.Stderr, "Invalid --format value: %s (expected default or json)\n", *format)
 		os.Exit(1)
 	}
+	if *continueSession && *session != "" {
+		fmt.Fprintln(os.Stderr, "Invalid flags: --continue and --session are mutually exclusive")
+		os.Exit(1)
+	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *verbose, *dryRun, *delay); err != nil {
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *continueSession, *session, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, verbose, dryRun bool, delay float64) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, continueSession bool, session string, verbose, dryRun bool, delay float64) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -411,7 +426,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		}
 
 		// Run opencode
-		output, err := runOpencode(prompt, model, agent, format, verbose)
+		output, err := runOpencode(prompt, model, agent, format, continueSession, session, verbose)
 		if err != nil {
 			fmt.Printf("Warning: opencode exited with error: %v\n", err)
 			// If opencode fails, we still want to continue processing notes
@@ -668,7 +683,7 @@ Iteration: %d of %d
 `, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
 }
 
-func runOpencode(prompt string, model string, agent string, format string, verbose bool) (string, error) {
+func runOpencode(prompt string, model string, agent string, format string, continueSession bool, session string, verbose bool) (string, error) {
 	args := []string{"run"}
 	if model != "" {
 		args = append(args, "-m", model)
@@ -678,6 +693,12 @@ func runOpencode(prompt string, model string, agent string, format string, verbo
 	}
 	if format != "" {
 		args = append(args, "--format", format)
+	}
+	if continueSession {
+		args = append(args, "--continue")
+	}
+	if session != "" {
+		args = append(args, "--session", session)
 	}
 	args = append(args, prompt)
 	cmd := exec.Command("opencode", args...)
