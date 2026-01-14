@@ -113,7 +113,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [x] Handle Ctrl+C gracefully (SIGINT/SIGTERM): release lock and exit cleanly
 
 ## Testing
-- [ ] Add unit tests for `internal/ralph` modules (config/state/prompt/notes/lock)
+- [x] Add unit tests for `internal/ralph` modules (config/state/prompt/notes/lock)
 - [ ] Add an orchestrator integration test using a mock runner (no real `opencode` invocation)
 - [x] Update `CONVENTIONS.md` to include `go test ./...` and a coverage target for `internal/ralph` (>= 80%)
 
