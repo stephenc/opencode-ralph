@@ -125,6 +125,7 @@ Run Options:
   --variant VARIANT     Variant to use (passed to opencode run --variant)
   --attach ATTACH       Remote attach target (passed to opencode run --attach)
   --port PORT           Remote attach port (passed to opencode run --port)
+  --quiet               Hide opencode-ralph banner/status output
   --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
   --verbose             Stream opencode output in real-time
   --dry-run             Show constructed prompt without executing
@@ -283,6 +284,7 @@ func manualCmd(args []string) {
 	variant := fs.String("variant", "", "Variant to use (passed to opencode run --variant)")
 	attach := fs.String("attach", "", "Remote attach target (passed to opencode run --attach)")
 	port := fs.Int("port", 0, "Remote attach port (passed to opencode run --port)")
+	quiet := fs.Bool("quiet", false, "Hide opencode-ralph banner/status output")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -316,7 +318,17 @@ func manualCmd(args []string) {
 		os.Exit(1)
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, []string(files), *title, *verbose, *dryRun, *delay); err != nil {
+	quietFlag := *quiet
+	if *dryRun {
+		quietFlag = false
+	}
+
+	verboseFlag := *verbose || quietFlag
+	if *dryRun {
+		verboseFlag = false
+	}
+
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, files, *title, quietFlag, verboseFlag, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -342,6 +354,7 @@ func runCmd(args []string) {
 	variant := fs.String("variant", "", "Variant to use (passed to opencode run --variant)")
 	attach := fs.String("attach", "", "Remote attach target (passed to opencode run --attach)")
 	port := fs.Int("port", 0, "Remote attach port (passed to opencode run --port)")
+	quiet := fs.Bool("quiet", false, "Hide opencode-ralph banner/status output")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -374,13 +387,23 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, []string(files), *title, *verbose, *dryRun, *delay); err != nil {
+	quietFlag := *quiet
+	if *dryRun {
+		quietFlag = false
+	}
+
+	verboseFlag := *verbose || quietFlag
+	if *dryRun {
+		verboseFlag = false
+	}
+
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, files, *title, quietFlag, verboseFlag, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, verbose, dryRun bool, delay float64) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, quiet bool, verbose, dryRun bool, delay float64) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -407,22 +430,30 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		state.TotalIterations++
 		iteration := state.TotalIterations
 
-		fmt.Printf("\n=== Iteration %d (session: %d/%d) ===\n", iteration, i+1, maxIterations)
+		if !quiet {
+			fmt.Printf("\n=== Iteration %d (session: %d/%d) ===\n", iteration, i+1, maxIterations)
+		}
 
 		// Check rate limits
 		if maxPerHour > 0 || maxPerDay > 0 {
 			hourCount, dayCount := countRecentIterations(state.Timestamps)
 			if maxPerHour > 0 && hourCount >= maxPerHour {
-				fmt.Printf("Rate limit reached: %d iterations in the past hour (max: %d)\n", hourCount, maxPerHour)
+				if !quiet {
+					fmt.Printf("Rate limit reached: %d iterations in the past hour (max: %d)\n", hourCount, maxPerHour)
+				}
 				saveState(state)
 				return nil
 			}
 			if maxPerDay > 0 && dayCount >= maxPerDay {
-				fmt.Printf("Rate limit reached: %d iterations in the past day (max: %d)\n", dayCount, maxPerDay)
+				if !quiet {
+					fmt.Printf("Rate limit reached: %d iterations in the past day (max: %d)\n", dayCount, maxPerDay)
+				}
 				saveState(state)
 				return nil
 			}
-			fmt.Printf("Rate: %d/hour, %d/day\n", hourCount, dayCount)
+			if !quiet {
+				fmt.Printf("Rate: %d/hour, %d/day\n", hourCount, dayCount)
+			}
 		}
 
 		// Load all files
@@ -454,9 +485,11 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		}
 
 		// Run opencode
-		output, err := runOpencode(prompt, model, agent, format, variant, attach, port, continueSession, session, []string(files), title, verbose)
+		output, err := runOpencode(prompt, model, agent, format, variant, attach, port, continueSession, session, files, title, quiet, verbose)
 		if err != nil {
-			fmt.Printf("Warning: opencode exited with error: %v\n", err)
+			if !quiet {
+				fmt.Printf("Warning: opencode exited with error: %v\n", err)
+			}
 			// If opencode fails, we still want to continue processing notes
 			// but don't treat this as an error that stops the iteration
 		}
@@ -464,13 +497,17 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		// Extract and save notes
 		if notes := extractNotes(output); notes != "" {
 			if err := appendNotes(notes, iteration); err != nil {
-				fmt.Printf("Warning: failed to save notes: %v\n", err)
+				if !quiet {
+					fmt.Printf("Warning: failed to save notes: %v\n", err)
+				}
 			}
 		}
 
 		// Check for completion signal
 		if isComplete(output) {
-			fmt.Println("Received COMPLETE signal from opencode!")
+			if !quiet {
+				fmt.Println("Received COMPLETE signal from opencode!")
+			}
 			return nil
 		}
 
@@ -486,7 +523,9 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		}
 	}
 
-	fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
+	if !quiet {
+		fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
+	}
 	return nil
 }
 
@@ -711,7 +750,7 @@ Iteration: %d of %d
 `, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
 }
 
-func runOpencode(prompt string, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, verbose bool) (string, error) {
+func runOpencode(prompt string, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, quiet bool, verbose bool) (string, error) {
 	args := []string{"run"}
 	if model != "" {
 		args = append(args, "-m", model)
@@ -750,7 +789,7 @@ func runOpencode(prompt string, model string, agent string, format string, varia
 
 	var output bytes.Buffer
 
-	if verbose {
+	if verbose || quiet {
 		cmd.Stdout = io.MultiWriter(os.Stdout, &output)
 		cmd.Stderr = io.MultiWriter(os.Stderr, &output)
 	} else {
