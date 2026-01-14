@@ -92,7 +92,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [x] Add session passthroughs:
   - `--continue` to `opencode run --continue`
   - `--session` to `opencode run --session`
-- [ ] Add message attachment passthroughs:
+- [x] Add message attachment passthroughs:
   - `--file` to `opencode run --file` (repeatable)
   - `--title` to `opencode run --title`
 - [ ] Add remote attach passthroughs:
