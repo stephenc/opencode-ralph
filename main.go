@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 //go:embed templates/*
@@ -139,35 +140,54 @@ func defaultConfig() Config {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		runCmd(os.Args[1:])
-		return
-	}
-
-	switch os.Args[1] {
-	case "init":
-		initCmd(os.Args[2:])
-	case "manual":
-		manualCmd(os.Args[2:])
-	case "run":
-		runCmd(os.Args[2:])
-	case "config":
-		configCmd(os.Args[2:])
-	case "help", "--help", "-h":
-		printHelp()
-	default:
-		if strings.HasPrefix(os.Args[1], "-") {
-			runCmd(os.Args[1:])
-		} else {
-			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
-			printHelp()
-			os.Exit(1)
-		}
+	if err := newRootCmd().Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
-func printHelp() {
-	fmt.Println(`opencode-ralph - Iterative AI development orchestrator
+type runOptions struct {
+	maxIterations   int
+	maxPerHour      int
+	maxPerDay       int
+	prompt          string
+	conventions     string
+	specs           string
+	agent           string
+	format          string
+	continueSession bool
+	session         string
+	files           []string
+	title           string
+	variant         string
+	attach          string
+	port            int
+	quiet           bool
+	model           string
+	verbose         bool
+	dryRun          bool
+	delay           float64
+}
+
+func newRootCmd() *cobra.Command {
+	cfg := loadConfig()
+	opts := &runOptions{}
+
+	rootCmd := &cobra.Command{
+		Use:           "opencode-ralph",
+		Short:         "Iterative AI development orchestrator",
+		Args:          cobra.NoArgs,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Default behavior: same as `opencode-ralph run ...`
+			return runWithOptions(*opts, cfg.MaxIterations, cfg.MaxPerHour, cfg.MaxPerDay)
+		},
+	}
+
+	bindRunFlags(rootCmd, cfg, opts)
+
+	legacyHelp := `opencode-ralph - Iterative AI development orchestrator
 
 Usage:
   opencode-ralph [command] [options]
@@ -216,12 +236,84 @@ Examples:
   opencode-ralph manual --verbose
   opencode-ralph run --max-iterations 10
   opencode-ralph config set specs_file TASKS.md
-  opencode-ralph --specs TASKS.md --max-per-hour 5`)
+  opencode-ralph --specs TASKS.md --max-per-hour 5
+`
+
+	rootCmd.SetHelpTemplate(legacyHelp)
+
+	// Override cobra's default help/usage rendering to keep legacy output.
+	rootCmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		cmd.Println(legacyHelp)
+	})
+	rootCmd.SetUsageFunc(func(cmd *cobra.Command) error {
+		cmd.Println(legacyHelp)
+		return nil
+	})
+
+	rootCmd.AddCommand(newInitCmd())
+	rootCmd.AddCommand(newManualCmd(cfg))
+	rootCmd.AddCommand(newRunCmd(cfg))
+	rootCmd.AddCommand(newConfigCmd())
+
+	return rootCmd
 }
 
-func initCmd(args []string) {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	fs.Parse(args)
+func newInitCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "init",
+		Short: "Create PROMPT.md, CONVENTIONS.md, and stub SPECS.md",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			initCmd()
+			return nil
+		},
+	}
+}
+
+func newManualCmd(cfg Config) *cobra.Command {
+	opts := &runOptions{maxIterations: 1}
+	cmd := &cobra.Command{
+		Use:          "manual",
+		Short:        "Run exactly one iteration",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWithOptions(*opts, cfg.MaxIterations, cfg.MaxPerHour, cfg.MaxPerDay)
+		},
+	}
+	bindRunFlags(cmd, cfg, opts)
+	return cmd
+}
+
+func newRunCmd(cfg Config) *cobra.Command {
+	opts := &runOptions{}
+	cmd := &cobra.Command{
+		Use:          "run",
+		Short:        "Run multiple iterations until complete",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runWithOptions(*opts, cfg.MaxIterations, cfg.MaxPerHour, cfg.MaxPerDay)
+		},
+	}
+	bindRunFlags(cmd, cfg, opts)
+	return cmd
+}
+
+func newConfigCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "View or modify configuration",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			configCmd(args)
+			return nil
+		},
+	}
+	return cmd
+}
+
+func initCmd() {
 
 	// Create .ralph directory
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
@@ -337,140 +429,80 @@ func configSet(key, value string) {
 	fmt.Printf("Set %s = %s\n", key, value)
 }
 
-func manualCmd(args []string) {
+func runWithOptions(opts runOptions, defaultMaxIterations, defaultMaxPerHour, defaultMaxPerDay int) error {
 	cfg := loadConfig()
 
-	fs := flag.NewFlagSet("manual", flag.ExitOnError)
-	prompt := fs.String("prompt", "", "Override prompt file")
-	conventions := fs.String("conventions", "", "Override conventions file")
-	specs := fs.String("specs", "", "Override specs file")
-	agent := fs.String("agent", "", "Agent to use (passed to opencode run --agent)")
-	format := fs.String("format", "", "Output format (passed to opencode run --format; default|json)")
-	continueSession := fs.Bool("continue", false, "Continue a previous session (passed to opencode run --continue)")
-	session := fs.String("session", "", "Session ID (passed to opencode run --session)")
-	var files stringSliceFlag
-	fs.Var(&files, "file", "File to attach (repeatable; passed to opencode run --file)")
-	title := fs.String("title", "", "Message title (passed to opencode run --title)")
-	variant := fs.String("variant", "", "Variant to use (passed to opencode run --variant)")
-	attach := fs.String("attach", "", "Remote attach target (passed to opencode run --attach)")
-	port := fs.Int("port", 0, "Remote attach port (passed to opencode run --port)")
-	quiet := fs.Bool("quiet", false, "Hide opencode-ralph banner/status output")
-	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
-	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
-	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
-	delay := fs.Float64("delay", 2.0, "Delay between iterations in seconds")
-
-	fs.Parse(args)
-
-	// Apply overrides
-	if *prompt != "" {
-		cfg.PromptFile = *prompt
-	}
-	if *conventions != "" {
-		cfg.ConventionsFile = *conventions
-	}
-	if *specs != "" {
-		cfg.SpecsFile = *specs
+	maxIterations := opts.maxIterations
+	if maxIterations == 0 {
+		maxIterations = defaultMaxIterations
 	}
 
-	// Use model from flag, or fall back to config
-	modelToUse := *model
+	maxPerHour := opts.maxPerHour
+	if maxPerHour == 0 {
+		maxPerHour = defaultMaxPerHour
+	}
+
+	maxPerDay := opts.maxPerDay
+	if maxPerDay == 0 {
+		maxPerDay = defaultMaxPerDay
+	}
+
+	if opts.prompt != "" {
+		cfg.PromptFile = opts.prompt
+	}
+	if opts.conventions != "" {
+		cfg.ConventionsFile = opts.conventions
+	}
+	if opts.specs != "" {
+		cfg.SpecsFile = opts.specs
+	}
+
+	modelToUse := opts.model
 	if modelToUse == "" {
 		modelToUse = cfg.Model
 	}
 
-	if *format != "" && *format != "default" && *format != "json" {
-		fmt.Fprintf(os.Stderr, "Invalid --format value: %s (expected default or json)\n", *format)
-		os.Exit(1)
+	if opts.format != "" && opts.format != "default" && opts.format != "json" {
+		return fmt.Errorf("invalid --format value: %s (expected default or json)", opts.format)
 	}
-	if *continueSession && *session != "" {
-		fmt.Fprintln(os.Stderr, "Invalid flags: --continue and --session are mutually exclusive")
-		os.Exit(1)
+	if opts.continueSession && opts.session != "" {
+		return fmt.Errorf("invalid flags: --continue and --session are mutually exclusive")
 	}
 
-	quietFlag := *quiet
-	if *dryRun {
+	quietFlag := opts.quiet
+	if opts.dryRun {
 		quietFlag = false
 	}
 
-	verboseFlag := *verbose || quietFlag
-	if *dryRun {
+	verboseFlag := opts.verbose || quietFlag
+	if opts.dryRun {
 		verboseFlag = false
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, files, *title, quietFlag, verboseFlag, *dryRun, *delay); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	return runIterations(cfg, maxIterations, maxPerHour, maxPerDay, modelToUse, opts.agent, opts.format, opts.variant, opts.attach, opts.port, opts.continueSession, opts.session, stringSliceFlag(opts.files), opts.title, quietFlag, verboseFlag, opts.dryRun, opts.delay)
 }
 
-func runCmd(args []string) {
-	cfg := loadConfig()
-
-	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	maxIterations := fs.Int("max-iterations", cfg.MaxIterations, "Maximum iterations")
-	maxPerHour := fs.Int("max-per-hour", cfg.MaxPerHour, "Maximum iterations per hour (0 = unlimited)")
-	maxPerDay := fs.Int("max-per-day", cfg.MaxPerDay, "Maximum iterations per day (0 = unlimited)")
-	prompt := fs.String("prompt", "", "Override prompt file")
-	conventions := fs.String("conventions", "", "Override conventions file")
-	specs := fs.String("specs", "", "Override specs file")
-	agent := fs.String("agent", "", "Agent to use (passed to opencode run --agent)")
-	format := fs.String("format", "", "Output format (passed to opencode run --format; default|json)")
-	continueSession := fs.Bool("continue", false, "Continue a previous session (passed to opencode run --continue)")
-	session := fs.String("session", "", "Session ID (passed to opencode run --session)")
-	var files stringSliceFlag
-	fs.Var(&files, "file", "File to attach (repeatable; passed to opencode run --file)")
-	title := fs.String("title", "", "Message title (passed to opencode run --title)")
-	variant := fs.String("variant", "", "Variant to use (passed to opencode run --variant)")
-	attach := fs.String("attach", "", "Remote attach target (passed to opencode run --attach)")
-	port := fs.Int("port", 0, "Remote attach port (passed to opencode run --port)")
-	quiet := fs.Bool("quiet", false, "Hide opencode-ralph banner/status output")
-	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
-	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
-	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
-	delay := fs.Float64("delay", 2.0, "Delay between iterations in seconds")
-	fs.Parse(args)
-
-	// Apply overrides
-	if *prompt != "" {
-		cfg.PromptFile = *prompt
-	}
-	if *conventions != "" {
-		cfg.ConventionsFile = *conventions
-	}
-	if *specs != "" {
-		cfg.SpecsFile = *specs
-	}
-
-	// Use model from flag, or fall back to config
-	modelToUse := *model
-	if modelToUse == "" {
-		modelToUse = cfg.Model
-	}
-
-	if *format != "" && *format != "default" && *format != "json" {
-		fmt.Fprintf(os.Stderr, "Invalid --format value: %s (expected default or json)\n", *format)
-		os.Exit(1)
-	}
-	if *continueSession && *session != "" {
-		fmt.Fprintln(os.Stderr, "Invalid flags: --continue and --session are mutually exclusive")
-		os.Exit(1)
-	}
-
-	quietFlag := *quiet
-	if *dryRun {
-		quietFlag = false
-	}
-
-	verboseFlag := *verbose || quietFlag
-	if *dryRun {
-		verboseFlag = false
-	}
-
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, files, *title, quietFlag, verboseFlag, *dryRun, *delay); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+func bindRunFlags(cmd *cobra.Command, cfg Config, opts *runOptions) {
+	cmd.Flags().IntVar(&opts.maxIterations, "max-iterations", cfg.MaxIterations, "Maximum iterations")
+	cmd.Flags().IntVar(&opts.maxPerHour, "max-per-hour", cfg.MaxPerHour, "Maximum iterations per hour (0 = unlimited)")
+	cmd.Flags().IntVar(&opts.maxPerDay, "max-per-day", cfg.MaxPerDay, "Maximum iterations per day (0 = unlimited)")
+	cmd.Flags().StringVar(&opts.prompt, "prompt", "", "Override prompt file path")
+	cmd.Flags().StringVar(&opts.conventions, "conventions", "", "Override conventions file path")
+	cmd.Flags().StringVar(&opts.specs, "specs", "", "Override specs file path")
+	cmd.Flags().StringVar(&opts.agent, "agent", "", "Agent to use (passed to opencode run --agent)")
+	cmd.Flags().StringVar(&opts.format, "format", "", "Output format (passed to opencode run --format; default|json)")
+	cmd.Flags().BoolVar(&opts.continueSession, "continue", false, "Continue a previous session (passed to opencode run --continue)")
+	cmd.Flags().StringVar(&opts.session, "session", "", "Session ID (passed to opencode run --session)")
+	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to attach (repeatable; passed to opencode run --file)")
+	cmd.Flags().StringVar(&opts.title, "title", "", "Message title (passed to opencode run --title)")
+	cmd.Flags().StringVar(&opts.variant, "variant", "", "Variant to use (passed to opencode run --variant)")
+	cmd.Flags().StringVar(&opts.attach, "attach", "", "Remote attach target (passed to opencode run --attach)")
+	cmd.Flags().IntVar(&opts.port, "port", 0, "Remote attach port (passed to opencode run --port)")
+	cmd.Flags().BoolVar(&opts.quiet, "quiet", false, "Hide opencode-ralph banner/status output")
+	cmd.Flags().StringVar(&opts.model, "model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
+	cmd.Flags().BoolVar(&opts.verbose, "verbose", false, "Stream opencode output in real-time")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Show constructed prompt without executing")
+	cmd.Flags().Float64Var(&opts.delay, "delay", 2.0, "Delay between iterations in seconds")
 }
 
 func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, quiet bool, verbose, dryRun bool, delay float64) (err error) {

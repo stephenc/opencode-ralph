@@ -66,7 +66,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator that drives 
 ## CLI + Package Structure Refactor
 Goal: match a clean Go project layout and keep specs implementation-agnostic.
 
-- [ ] Migrate CLI to `cobra` (root command + `init`, `run`, `manual`, `config` subcommands)
+- [x] Migrate CLI to `cobra` (root command + `init`, `run`, `manual`, `config` subcommands)
 - [ ] Restructure packages to:
   - `main.go` (calls `cmd.Execute()`)
   - `cmd/` (cobra commands and flags)
