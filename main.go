@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-//go:embed templates/*
+//go:embed internal/ralph/templates/*
 var templates embed.FS
 
 // Config holds project configuration
@@ -325,19 +325,19 @@ func initCmd() {
 	cfg := loadConfig()
 
 	// Create PROMPT.md if not exists
-	if err := createFromTemplate(cfg.PromptFile, "templates/PROMPT.md"); err != nil {
+	if err := createFromTemplate(cfg.PromptFile, "internal/ralph/templates/PROMPT.md"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create CONVENTIONS.md if not exists
-	if err := createFromTemplate(cfg.ConventionsFile, "templates/CONVENTIONS.md"); err != nil {
+	if err := createFromTemplate(cfg.ConventionsFile, "internal/ralph/templates/CONVENTIONS.md"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Create SPECS.md if not exists
-	if err := createFromTemplate(cfg.SpecsFile, "templates/SPECS.md"); err != nil {
+	if err := createFromTemplate(cfg.SpecsFile, "internal/ralph/templates/SPECS.md"); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

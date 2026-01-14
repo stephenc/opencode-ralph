@@ -82,7 +82,7 @@ Goal: match a clean Go project layout and keep specs implementation-agnostic.
   - `signal.go` (signal handling)
   - `color.go` (banner + colored status output)
   - `templates.go` (+ embedded templates)
-- [ ] Move embedded templates into `internal/ralph/templates/` and update init to read from the embedded template FS
+- [x] Move embedded templates into `internal/ralph/templates/` and update init to read from the embedded template FS
 - [ ] Keep current CLI behavior/UX equivalent after refactor (same defaults and core flags)
 
 ## opencode Runner Passthrough Flags
