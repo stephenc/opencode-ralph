@@ -42,7 +42,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator that drives 
 ## Git Integration
 **Design Note**: Ralph does NOT manage git commits directly. `opencode` (and its agent) performs commits.
 
-- [ ] Remove ralph's auto-commit code (autoCommit function and any calls)
+- [x] Remove ralph's auto-commit code (autoCommit function and any calls)
 - [x] Remove `--no-commit` flag (no longer needed)
 - [x] Update `PROMPT.md` to instruct the agent to commit after completing each task
 - [x] Require conventional commits style (`fix:`, `feat:`, `docs:`, `test:`, `chore:`, etc.)
