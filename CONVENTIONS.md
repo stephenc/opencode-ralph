@@ -8,9 +8,14 @@
 ## Build & Verify
 Before marking any task complete, you MUST verify your changes:
 ```bash
+gofmt -w .
+go test ./...
 go build -o opencode-ralph .
 ```
-If the build fails, fix all errors before proceeding. Do not mark a task complete if the code does not compile.
+If the build or tests fail, fix all errors before proceeding. Do not mark a task complete if the code does not compile.
+
+## Coverage Target
+After the `internal/ralph` refactor lands, aim for >= 80% coverage for `internal/ralph`.
 
 ## Code Style
 
