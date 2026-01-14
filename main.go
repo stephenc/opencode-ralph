@@ -123,6 +123,8 @@ Run Options:
   --file FILE           Attach file (repeatable; passed to opencode run --file)
   --title TITLE         Message title (passed to opencode run --title)
   --variant VARIANT     Variant to use (passed to opencode run --variant)
+  --attach ATTACH       Remote attach target (passed to opencode run --attach)
+  --port PORT           Remote attach port (passed to opencode run --port)
   --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
   --verbose             Stream opencode output in real-time
   --dry-run             Show constructed prompt without executing
@@ -279,6 +281,8 @@ func manualCmd(args []string) {
 	fs.Var(&files, "file", "File to attach (repeatable; passed to opencode run --file)")
 	title := fs.String("title", "", "Message title (passed to opencode run --title)")
 	variant := fs.String("variant", "", "Variant to use (passed to opencode run --variant)")
+	attach := fs.String("attach", "", "Remote attach target (passed to opencode run --attach)")
+	port := fs.Int("port", 0, "Remote attach port (passed to opencode run --port)")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -312,7 +316,7 @@ func manualCmd(args []string) {
 		os.Exit(1)
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *variant, *continueSession, *session, []string(files), *title, *verbose, *dryRun, *delay); err != nil {
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, []string(files), *title, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -336,6 +340,8 @@ func runCmd(args []string) {
 	fs.Var(&files, "file", "File to attach (repeatable; passed to opencode run --file)")
 	title := fs.String("title", "", "Message title (passed to opencode run --title)")
 	variant := fs.String("variant", "", "Variant to use (passed to opencode run --variant)")
+	attach := fs.String("attach", "", "Remote attach target (passed to opencode run --attach)")
+	port := fs.Int("port", 0, "Remote attach port (passed to opencode run --port)")
 	model := fs.String("model", "", "Model to use (e.g., ollama/qwen3-coder:30b)")
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
@@ -368,13 +374,13 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *variant, *continueSession, *session, []string(files), *title, *verbose, *dryRun, *delay); err != nil {
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *agent, *format, *variant, *attach, *port, *continueSession, *session, []string(files), *title, *verbose, *dryRun, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, continueSession bool, session string, files stringSliceFlag, title string, verbose, dryRun bool, delay float64) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, verbose, dryRun bool, delay float64) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -448,7 +454,7 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		}
 
 		// Run opencode
-		output, err := runOpencode(prompt, model, agent, format, variant, continueSession, session, []string(files), title, verbose)
+		output, err := runOpencode(prompt, model, agent, format, variant, attach, port, continueSession, session, []string(files), title, verbose)
 		if err != nil {
 			fmt.Printf("Warning: opencode exited with error: %v\n", err)
 			// If opencode fails, we still want to continue processing notes
@@ -705,7 +711,7 @@ Iteration: %d of %d
 `, promptMD, conventionsMD, specsMD, notesMD, iteration, maxIterations)
 }
 
-func runOpencode(prompt string, model string, agent string, format string, variant string, continueSession bool, session string, files stringSliceFlag, title string, verbose bool) (string, error) {
+func runOpencode(prompt string, model string, agent string, format string, variant string, attach string, port int, continueSession bool, session string, files stringSliceFlag, title string, verbose bool) (string, error) {
 	args := []string{"run"}
 	if model != "" {
 		args = append(args, "-m", model)
@@ -718,6 +724,12 @@ func runOpencode(prompt string, model string, agent string, format string, varia
 	}
 	if variant != "" {
 		args = append(args, "--variant", variant)
+	}
+	if attach != "" {
+		args = append(args, "--attach", attach)
+	}
+	if port != 0 {
+		args = append(args, "--port", fmt.Sprintf("%d", port))
 	}
 	if continueSession {
 		args = append(args, "--continue")

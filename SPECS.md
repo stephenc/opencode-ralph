@@ -95,7 +95,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [x] Add message attachment passthroughs:
   - `--file` to `opencode run --file` (repeatable)
   - `--title` to `opencode run --title`
-- [ ] Add remote attach passthroughs:
+- [x] Add remote attach passthroughs:
   - `--attach` to `opencode run --attach`
   - `--port` to `opencode run --port`
 - [x] Add `--variant` passthrough to `opencode run --variant`
