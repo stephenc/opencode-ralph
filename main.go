@@ -98,13 +98,14 @@ Run Options:
   --max-iterations N    Maximum iterations (default: from config or 50)
   --max-per-hour N      Maximum iterations per hour (default: from config or 0)
   --max-per-day N       Maximum iterations per day (default: from config or 0)
-  --prompt FILE         Override prompt file path
-  --conventions FILE    Override conventions file path
-  --specs FILE          Override specs file path
-  --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
-  --verbose             Stream opencode output in real-time
-  --dry-run             Show constructed prompt without executing
-  --no-commit           Disable auto-commit after each iteration
+   --prompt FILE         Override prompt file path
+   --conventions FILE    Override conventions file path
+   --specs FILE          Override specs file path
+   --model MODEL         Model to use (e.g., ollama/qwen3-coder:30b)
+   --verbose             Stream opencode output in real-time
+   --dry-run             Show constructed prompt without executing
+   --delay SECONDS       Delay between iterations (default: 2s)
+   --no-commit           Disable auto-commit after each iteration
 
 Config Commands:
   config                Show current configuration
@@ -252,6 +253,7 @@ func manualCmd(args []string) {
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
 	noCommit := fs.Bool("no-commit", false, "Disable auto-commit after iterations")
+	delay := fs.Float64("delay", 2.0, "Delay between iterations in seconds")
 	fs.Parse(args)
 
 	// Apply overrides
@@ -271,7 +273,7 @@ func manualCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun, *noCommit); err != nil {
+	if err := runIterations(cfg, 1, 0, 0, modelToUse, *verbose, *dryRun, *noCommit, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -291,6 +293,7 @@ func runCmd(args []string) {
 	verbose := fs.Bool("verbose", false, "Stream opencode output in real-time")
 	dryRun := fs.Bool("dry-run", false, "Show constructed prompt without executing")
 	noCommit := fs.Bool("no-commit", false, "Disable auto-commit after iterations")
+	delay := fs.Float64("delay", 2.0, "Delay between iterations in seconds")
 	fs.Parse(args)
 
 	// Apply overrides
@@ -310,13 +313,13 @@ func runCmd(args []string) {
 		modelToUse = cfg.Model
 	}
 
-	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, *noCommit); err != nil {
+	if err := runIterations(cfg, *maxIterations, *maxPerHour, *maxPerDay, modelToUse, *verbose, *dryRun, *noCommit, *delay); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun, noCommit bool) error {
+func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model string, verbose, dryRun, noCommit bool, delay float64) error {
 	// Ensure .ralph directory exists
 	if err := os.MkdirAll(ralphDir, 0755); err != nil {
 		return fmt.Errorf("creating .ralph directory: %w", err)
@@ -455,6 +458,12 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 	}
 
 	fmt.Printf("Reached maximum iterations (%d)\n", maxIterations)
+
+	// Add delay between iterations
+	if delay > 0 {
+		time.Sleep(time.Duration(delay) * time.Second)
+	}
+
 	return nil
 }
 

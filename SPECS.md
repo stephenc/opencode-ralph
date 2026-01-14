@@ -54,7 +54,7 @@ opencode commit as part of each run.
 - [x] Respect max-iterations limit
 - [x] Detect `<ralph_status>COMPLETE</ralph_status>` signal from output
 - [x] Re-read all files before each iteration (allows live editing of specs/prompt/conventions)
-- [ ] Add 2 second default pause between iterations (configurable via --delay flag)
+- [x] Add 2 second default pause between iterations (configurable via --delay flag)
 
 ## State Management
 - [x] Create .ralph/ directory if not exists
