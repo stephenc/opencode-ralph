@@ -59,7 +59,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator that drives 
 - [x] Track iteration timestamps for rate limiting
 - [x] Prune old timestamps (keep 24 hours)
 - [x] Implement lock file to prevent concurrent runs
-- [ ] Improve lock handling: detect stale lock via PID and clean it up
+- [x] Improve lock handling: detect stale lock via PID and clean it up
 - [x] Clean up lock on exit (including SIGINT/SIGTERM)
 
 ## CLI + Package Structure Refactor

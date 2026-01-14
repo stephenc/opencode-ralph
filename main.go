@@ -468,22 +468,77 @@ func saveState(state State) {
 }
 
 func acquireLock(path string) (bool, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-	if err != nil {
-		if os.IsExist(err) {
+	for attempts := 0; attempts < 2; attempts++ {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if err == nil {
+			defer f.Close()
+			if _, err := fmt.Fprintf(f, "%d\n", os.Getpid()); err != nil {
+				_ = f.Close()
+				_ = os.Remove(path)
+				return false, fmt.Errorf("writing lock pid: %w", err)
+			}
+			return true, nil
+		}
+
+		if !os.IsExist(err) {
+			return false, fmt.Errorf("creating lock file %s: %w", path, err)
+		}
+
+		pid, err := readLockPID(path)
+		if err != nil {
 			return false, fmt.Errorf("lock file %s exists; another run may be active", path)
 		}
-		return false, err
+
+		if isProcessRunning(pid) {
+			return false, fmt.Errorf("lock file %s exists (pid %d); another run may be active", path, pid)
+		}
+
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return false, fmt.Errorf("removing stale lock %s: %w", path, err)
+		}
+	}
+
+	return false, fmt.Errorf("unable to acquire lock %s", path)
+}
+
+func readLockPID(path string) (int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, fmt.Errorf("opening lock file %s: %w", path, err)
 	}
 	defer f.Close()
 
-	if _, err := fmt.Fprintf(f, "%d\n", os.Getpid()); err != nil {
-		_ = f.Close()
-		_ = os.Remove(path)
-		return false, err
+	var pid int
+	if _, err := fmt.Fscan(f, &pid); err != nil {
+		return 0, fmt.Errorf("reading lock pid from %s: %w", path, err)
+	}
+	if pid <= 0 {
+		return 0, fmt.Errorf("invalid lock pid %d", pid)
+	}
+	return pid, nil
+}
+
+func isProcessRunning(pid int) bool {
+	if pid <= 0 {
+		return false
 	}
 
-	return true, nil
+	err := syscall.Kill(pid, 0)
+	if err == nil {
+		return true
+	}
+
+	if errno, ok := err.(syscall.Errno); ok {
+		switch errno {
+		case syscall.ESRCH:
+			return false
+		case syscall.EPERM:
+			return true
+		}
+	}
+
+	// If we can't reliably determine, treat as running.
+	return true
 }
 
 func releaseLock(path string) error {
