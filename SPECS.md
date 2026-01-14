@@ -117,4 +117,4 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [ ] Update `CONVENTIONS.md` to include `go test ./...` and a coverage target for `internal/ralph` (>= 80%)
 
 ## Documentation
-- [ ] Create `README.md` for the repository (usage, examples, configuration)
+- [x] Create `README.md` for the repository (usage, examples, configuration)
