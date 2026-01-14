@@ -9,8 +9,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"regexp"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -329,6 +332,9 @@ func runIterations(cfg Config, maxIterations, maxPerHour, maxPerDay int, model s
 		return fmt.Errorf("acquiring lock: %w", err)
 	}
 	if locked {
+		stopSignalHandler := installLockSignalHandler(lockFile)
+		defer stopSignalHandler()
+
 		defer func() {
 			if err := releaseLock(lockFile); err != nil {
 				fmt.Printf("Warning: failed to release lock: %v\n", err)
@@ -488,6 +494,38 @@ func releaseLock(path string) error {
 		return err
 	}
 	return nil
+}
+
+func installLockSignalHandler(lockPath string) func() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	done := make(chan struct{})
+	go func() {
+		select {
+		case sig := <-c:
+			if err := releaseLock(lockPath); err != nil {
+				fmt.Printf("Warning: failed to release lock: %v\n", err)
+			}
+			signal.Stop(c)
+			close(done)
+			// Re-raise to get default exit behavior.
+			if s, ok := sig.(syscall.Signal); ok {
+				_ = syscall.Kill(os.Getpid(), s)
+			}
+		case <-done:
+			signal.Stop(c)
+			return
+		}
+	}()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			signal.Stop(c)
+			close(done)
+		})
+	}
 }
 
 func pruneOldTimestamps(state *State) {

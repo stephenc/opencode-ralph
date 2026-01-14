@@ -60,7 +60,7 @@ Implementation checklist for the Go-based Ralph Wiggum orchestrator that drives 
 - [x] Prune old timestamps (keep 24 hours)
 - [x] Implement lock file to prevent concurrent runs
 - [ ] Improve lock handling: detect stale lock via PID and clean it up
-- [ ] Clean up lock on exit (including SIGINT/SIGTERM)
+- [x] Clean up lock on exit (including SIGINT/SIGTERM)
 
 ## CLI + Package Structure Refactor
 Goal: match a clean Go project layout and keep specs implementation-agnostic.
