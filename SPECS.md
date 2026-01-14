@@ -98,7 +98,7 @@ Expose a small, explicit set of `opencode run` flags via opencode-ralph (do not 
 - [ ] Add remote attach passthroughs:
   - `--attach` to `opencode run --attach`
   - `--port` to `opencode run --port`
-- [ ] Add `--variant` passthrough to `opencode run --variant`
+- [x] Add `--variant` passthrough to `opencode run --variant`
 
 ## Output / UX Polish
 - [ ] Add `--quiet` flag that hides opencode-ralph banner/status output
