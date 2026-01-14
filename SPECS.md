@@ -80,7 +80,7 @@ Goal: match a clean Go project layout and keep specs implementation-agnostic.
   - `notes.go` (notes extraction/persistence)
   - `lock.go` (lock acquire/release)
   - `signal.go` (signal handling)
-  - `color.go` (banner + colored status output)
+  - [x] `color.go` (banner + colored status output)
   - `templates.go` (+ embedded templates)
 - [x] Move embedded templates into `internal/ralph/templates/` and update init to read from the embedded template FS
 - [ ] Keep current CLI behavior/UX equivalent after refactor (same defaults and core flags)
